@@ -1016,7 +1016,7 @@ function p_toplevel(ds::DefaultStyle, cst::CSTParser.EXPR, s::State)
             continue
         end
         add_node!(t, pretty(style, a, s), s, max_padding = s.opts.indent)
-        add_node!(t, Semicolon(), s)
+        # add_node!(t, Semicolon(), s)
     end
     t
 end

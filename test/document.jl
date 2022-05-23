@@ -28,4 +28,59 @@
         ranges = Dict(1 => 1:14, 2 => 15:20)
         @test ranges == d.line_to_range
     end
+
+    @testset "newline semicolons" begin
+        # ENDMARKER
+    @testset "ENDMARKER" begin
+        str = """a = 1;"""
+        d = JuliaFormatter.Document(str)
+        @test (1 in d.newline_semicolons)
+
+        str = """
+
+
+        a = 1;"""
+        d = JuliaFormatter.Document(str)
+        @test (3 in d.newline_semicolons)
+    end
+
+    @testset "NEWLINE" begin
+        str = """
+
+        a = 1;
+        """
+        d = JuliaFormatter.Document(str)
+        @test (2 in d.newline_semicolons)
+
+        str = """
+
+        a = 1; # comment
+        """
+        d = JuliaFormatter.Document(str)
+        @test (2 in d.newline_semicolons)
+
+        str = """
+
+        a = 1; #= comment =#
+        """
+        d = JuliaFormatter.Document(str)
+        @test (2 in d.newline_semicolons)
+
+        str = """
+
+        a = 1;# comment
+        """
+        d = JuliaFormatter.Document(str)
+        @test (2 in d.newline_semicolons)
+
+        str = """
+
+        a = 1;#= comment =#
+        """
+        d = JuliaFormatter.Document(str)
+        @test (2 in d.newline_semicolons)
+    end
+
+
+    end
 end

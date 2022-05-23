@@ -458,6 +458,7 @@ function add_node!(
 )
     if n.typ === SEMICOLON
         join_lines = true
+        @info "foo" s.offset
         loc =
             s.offset > length(s.doc.text) && t.typ === TopLevel ?
             cursor_loc(s, s.offset - 1) : cursor_loc(s)
@@ -508,6 +509,24 @@ function add_node!(
         push!(t.nodes, n)
         return
     elseif n.typ === INLINECOMMENT
+        # loc = cursor_loc(s)
+        # if loc[1] in s.doc.newline_semicolons
+        #     add_node!(t, Semicolon(), s)
+        # end
+        push!(t.nodes, n)
+        return
+    elseif n.typ === NEWLINE
+        if t[end].typ !== INLINECOMMENT
+            # loc = cursor_loc(s)
+        loc = s.offset > length(s.doc.text) ? cursor_loc(s, s.offset - 1) : cursor_loc(s)
+            @info " here " s.offset loc
+            if loc[1] in s.doc.newline_semicolons
+                add_node!(t, Semicolon(), s)
+            end
+        end
+        t.len += length(n)
+        n.startline = t.endline
+        n.endline = t.endline
         push!(t.nodes, n)
         return
     elseif is_custom_leaf(n)
@@ -585,6 +604,7 @@ function add_node!(
         join_lines = t.endline == n.startline
     end
 
+    # @info "INSERT NODE" n.typ
     if !is_prev_newline(t.nodes[end])
         current_line = t.endline
         notcode_startline = current_line + 1
@@ -617,9 +637,9 @@ function add_node!(
             # This fixes cases similar to the one shown in issue #51.
             nt === WHITESPACE && (t.nodes[end] = Whitespace(0))
 
-            if hascomment(s.doc, current_line)
-                add_node!(t, InlineComment(current_line), s)
-            end
+            # current_line in s.doc.newline_semicolons && add_node!(t, Semicolon(), s)
+
+            hascomment(s.doc, current_line) && add_node!(t, InlineComment(current_line), s)
 
             if nt !== PLACEHOLDER
                 add_node!(t, Newline(nest_behavior = AlwaysNest), s)
@@ -634,14 +654,17 @@ function add_node!(
                 add_node!(t, Newline(nest_behavior = AlwaysNest), s)
             end
         elseif !join_lines
+            # current_line in s.doc.newline_semicolons && add_node!(t, Semicolon(), s)
             if hascomment(s.doc, current_line) && current_line != n.startline
                 add_node!(t, InlineComment(current_line), s)
             end
+
             add_node!(t, Newline(nest_behavior = AlwaysNest), s)
         elseif nt === PLACEHOLDER &&
                current_line != n.startline &&
                hascomment(s.doc, current_line)
             t.nest_behavior = AlwaysNest
+            # current_line in s.doc.newline_semicolons && add_node!(t, Semicolon(), s)
             add_node!(t, InlineComment(current_line), s)
             # swap PLACEHOLDER (will be NEWLINE) with INLINECOMMENT node
             idx = length(t.nodes)
@@ -651,6 +674,7 @@ function add_node!(
                current_line != n.startline
             # rely on the whitespace tracked for the inline comment
             t.nodes[end] = Whitespace(0)
+            # current_line in s.doc.newline_semicolons && add_node!(t, Semicolon(), s)
             add_node!(t, InlineComment(current_line), s)
             add_node!(t, Newline(nest_behavior = AlwaysNest), s)
         end

@@ -22,6 +22,28 @@ function tokenize(val::AbstractString)::Tokens.Kind
     toks[1].kind
 end
 
+"""
+Assumes the current token (not in past_tokens) is a WHITESPACE node containing a newline.
+
+Returns the SEMICOLON token in past_tokens if it is near a newline, otherwise nothing.
+"""
+function semicolon_near_newline(past_tokens::CircularBuffer{Tokens.Token})
+    # the final WHITESPACE node could also be an ENDMARKER node
+    # the nodes inside [...] are nodes assumed to be in past_tokens
+    # the following node is the current token (not in past_tokens yet).
+    #
+    # [SEMICOLON], WHITESPACE (if newline will be the whitespace value will end with '\n')
+    # [SEMICOLON, COMMENT], WHITESPACE
+    # [SEMICOLON, WHITESPACE, COMMENT], WHITESPACE
+    past_tokens[end].kind === Tokens.SEMICOLON && return past_tokens[end]
+    if past_tokens[end].kind === Tokens.COMMENT
+        past_tokens[end-1].kind === Tokens.SEMICOLON && return past_tokens[end-1]
+        past_tokens[end-1].kind === Tokens.WHITESPACE && past_tokens[end-2].kind === Tokens.SEMICOLON && return past_tokens[end-2]
+    end
+
+    return nothing
+end
+
 struct Document
     text::AbstractString
 
@@ -42,6 +64,8 @@ struct Document
     # v1.7. For other purposes simply checking if the line has a semicolon is sufficient.
     semicolons::Dict{Int,Vector{Int}}
 
+    newline_semicolons::Set{Int}
+
     # List of tuples where a tuple contains
     # the start and end lines of regions in the
     # file formatting should be skipped.
@@ -53,11 +77,13 @@ function Document(text::AbstractString)
     lit_strings = Dict{Int,Tuple{Int,Int,String}}()
     comments = Dict{Int,Tuple{Int,String}}()
     semicolons = Dict{Int,Vector{Int}}()
+    newline_semicolons = Set{Int}()
     format_skips = Tuple{Int,Int,String}[]
-    prev_tok = Tokens.Token() # dummy initial token
     stack = Int[]
     format_on = true
     str = ""
+    past_tokens = CircularBuffer{Tokens.Token}(3)
+    prev_tok = Tokens.Token() # dummy initial token
 
     goffset = 0
     for (idx, t) in enumerate(Tokenize.tokenize(text))
@@ -67,12 +93,28 @@ function Document(text::AbstractString)
                 if c == '\n'
                     s = length(ranges) > 0 ? last(ranges[end]) + 1 : 1
                     push!(ranges, s:offset+1)
+
+                    # check for newline semicolons
+                    if length(past_tokens) > 2 
+                        pt = semicolon_near_newline(past_tokens)
+                        if pt !== nothing
+                        push!(newline_semicolons, pt.startpos[1])
+                        end
+                    end
                 end
                 offset += 1
             end
         elseif t.kind === Tokens.ENDMARKER
             s = length(ranges) > 0 ? last(ranges[end]) + 1 : 1
             push!(ranges, s:goffset)
+
+                    # check for newline semicolons
+                    if length(past_tokens) > 2 
+                        pt = semicolon_near_newline(past_tokens)
+                        if pt !== nothing
+                        push!(newline_semicolons, pt.startpos[1])
+                        end
+                    end
         elseif is_str_or_cmd(t.kind)
             offset = goffset
             lit_strings[offset] = (t.startpos[1], t.endpos[1], t.val)
@@ -153,6 +195,10 @@ function Document(text::AbstractString)
                 format_on = true
             end
         elseif t.kind === Tokens.SEMICOLON
+            # # the final whitespace newline could also be ENDMARKER
+            # SEMICOLON, WHITESPACE (if newline will be the whitespace value will end with '\n')
+            # SEMICOLON, WHITESPACE, COMMENT, WHITESPACE
+            # SEMICOLON, COMMENT, WHITESPACE
             if haskey(semicolons, t.startpos[1])
                 if prev_tok.kind === Tokens.SEMICOLON
                     semicolons[t.startpos[1]][end] += 1
@@ -164,6 +210,7 @@ function Document(text::AbstractString)
             end
         end
         prev_tok = t
+        push!(past_tokens, t)
 
         if t.kind === Tokens.COMMENT
             goffset += (t.endbyte - t.startbyte + 1)
@@ -195,6 +242,8 @@ function Document(text::AbstractString)
         push!(format_skips, (stack[1], -1, str))
     end
 
+    # @info "doc" semicolons newline_semicolons
+
     return Document(
         text,
         range_to_line,
@@ -202,6 +251,7 @@ function Document(text::AbstractString)
         lit_strings,
         comments,
         semicolons,
+        newline_semicolons,
         format_skips,
     )
 end
